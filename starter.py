@@ -20,7 +20,7 @@ if not mac_address:
     raise ValueError("MAC_ADDRESS not found in environment variables.")
 
 
-def send_magic_packet(mac_address: str, broadcast: str = "255.255.255.255", port: int = 9):
+def send_magic_packet(mac_address: str, broadcast: str = "192.168.1.255", port: int = 9):
     # Clean and validate MAC address
     mac = mac_address.replace(":", "").replace("-", "").replace(".", "")
     if len(mac) != 12 or not all(c in "0123456789abcdefABCDEF" for c in mac):
