@@ -15,6 +15,9 @@ dotenv.load_dotenv()
 
 bot = discord.Bot()
 
+mac_address = os.getenv("MAC_ADDRESS")
+if not mac_address:
+    raise ValueError("MAC_ADDRESS not found in environment variables.")
 
 
 def send_magic_packet(mac_address: str, broadcast: str = "255.255.255.255", port: int = 9):
@@ -77,6 +80,18 @@ async def whois(ctx: discord.ApplicationContext, member: discord.Member):
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
 
     await ctx.respond(embed=embed, ephemeral=True)
+
+
+@bot.slash_command(name="wake", description="Send a magic packet to wake up the server.")
+async def wake(ctx: discord.ApplicationContext):
+    try:
+        if not mac_address:
+            await ctx.respond("Internal server error: MAC address not configured. Please set the MAC_ADDRESS environment variable.", ephemeral=True)
+            return
+        send_magic_packet(mac_address)
+        await ctx.respond("Magic packet sent!", ephemeral=True)
+    except ValueError as e:
+        await ctx.respond(f"Error: {e}", ephemeral=True)
 
 
 token = os.getenv("TOKEN")
