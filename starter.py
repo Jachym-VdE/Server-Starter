@@ -1,7 +1,9 @@
 import discord
 import asyncio
 import dotenv, socket, os
+from datetime import datetime, timezone, timedelta
 
+from discord.ext import commands
 
 # Ensure an event loop is available, it doesn't work otherwise :(
 try:
@@ -18,6 +20,10 @@ bot = discord.Bot()
 mac_address = os.getenv("MAC_ADDRESS")
 if not mac_address:
     raise ValueError("MAC_ADDRESS not found in environment variables.")
+
+mc_role = os.getenv("MC_ROLE")
+if not mc_role:
+    raise ValueError("MC_ROLE not found in environment variables.")
 
 
 def send_magic_packet(mac_address: str, broadcast: str = "192.168.1.255", port: int = 9):
@@ -54,6 +60,24 @@ async def on_ready():
 
 
 # ----------------------------- Public Commands -----------------------------
+@bot.slash_command(name="help", description="Show all available commands.")
+async def help(ctx: discord.ApplicationContext):
+    embed = discord.Embed(
+        title="Server Starter — Help",
+        description="Here's a list of all available commands:",
+        color=discord.Color.blurple()
+    )
+
+    embed.add_field(name="/help", value="Show this help message.", inline=False)
+    embed.add_field(name="/ping", value="Check the bot's latency.", inline=False)
+    embed.add_field(name="/whois `<member>`", value="Display info about a server member (ID, creation date, join date, roles). This is primarily for administrative and or debug purposes.", inline=False)
+    embed.add_field(name="/wake", value="Send a Wake-on-LAN magic packet to start the server.", inline=False)
+    embed.add_field(name="More features are coming!", value="More features are planned and will be added periodically.", inline=False)
+
+    embed.set_author(name="Server Starter", icon_url=bot.user.display_avatar.url if bot.user else None)
+    await ctx.respond(embed=embed, ephemeral=True)
+
+
 @bot.slash_command(name="ping", description="Check the bot's latency.")
 async def ping(ctx: discord.ApplicationContext):
     latency = bot.latency * 1000
@@ -76,7 +100,7 @@ async def whois(ctx: discord.ApplicationContext, member: discord.Member):
     embed.add_field(name="Joined Server: ", value=discord.utils.format_dt(member.joined_at), inline=False)
 
     embed.add_field(name=f"Roles [{len(member.roles) - 1}]: ", value=", ".join([role.mention for role in member.roles if role.name != "@everyone"]), inline=False)
-    embed.set_author(name=member, icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
+    embed.set_author(name=member, icon_url=bot.user.display_avatar.url if bot.user else None)
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
 
     await ctx.respond(embed=embed, ephemeral=True)
@@ -88,8 +112,22 @@ async def wake(ctx: discord.ApplicationContext):
         if not mac_address:
             await ctx.respond("Internal server error: MAC address not configured. Please set the MAC_ADDRESS environment variable.", ephemeral=True)
             return
+        
         send_magic_packet(mac_address)
-        await ctx.respond("Magic packet sent!", ephemeral=True)
+        
+        embed = discord.Embed(
+            title=f"Magic Packet Sent Successfully!",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(name="Awoken by: ", value=str(ctx.author.mention), inline=False)
+        cest = timezone(timedelta(hours=2))
+        midnight_cest = (datetime.now(cest) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        embed.add_field(name="Awoken until: ", value=discord.utils.format_dt(midnight_cest, style="t"), inline=False)
+        embed.set_author(name="Server Starter", icon_url=bot.user.display_avatar.url if bot.user else None)
+        embed.set_footer(text="If the server fails to start, ping <@794589342445338674> for support.")
+
+        await ctx.respond(embed=embed, ephemeral=False)
     except ValueError as e:
         await ctx.respond(f"Error: {e}", ephemeral=True)
 
