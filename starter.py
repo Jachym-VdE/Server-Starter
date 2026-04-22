@@ -25,6 +25,11 @@ mc_role = os.getenv("MC_ROLE")
 if not mc_role:
     raise ValueError("MC_ROLE not found in environment variables.")
 
+bot_channel_id = os.getenv("BOT_CHANNEL")
+if not bot_channel_id:
+    raise ValueError("BOT_CHANNEL not found in environment variables.")
+bot_channel_id = int(bot_channel_id)
+
 
 def send_magic_packet(mac_address: str, broadcast: str = "192.168.1.255", port: int = 9):
     # Clean and validate MAC address
@@ -57,6 +62,11 @@ async def on_ready():
         )
     )
 
+
+@bot.event
+async def on_message(message: discord.Message):
+    if message.channel.id == bot_channel_id and not message.author.bot and not message.content.startswith("/"):
+        await message.delete()
 
 
 # ----------------------------- Public Commands -----------------------------
