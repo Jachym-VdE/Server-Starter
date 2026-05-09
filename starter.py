@@ -9,29 +9,28 @@ except RuntimeError:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-
 dotenv.load_dotenv()
-
 
 config = configparser.ConfigParser()
 config.read("config.ini")
 
-# --- DISCORD ---
-BOT_NAME = config.get("discord", "bot_name", fallback="Server Starter")
-
-# --- IDS ---
-CHANNEL_ID = config.getint("discord.ids", "bot_channel_id")
-ROLE_ID = config.getint("discord.ids", "bot_user_role_id")
-LOG_CHANNEL_ID = config.getint("discord.ids", "bot_logging_channel_id", fallback=0)
-RESPONSIBLE_USER_NAME = config.getint("discord.ids", "responsible_user_name", fallback=0)
 
 # --- FEATURES ---
-LOGGING_ENABLED = config.getboolean("features", "enable_logging", fallback=False)
-RESPONSIBLE_USER_ENABLED = config.getboolean("features", "responsible_user_id", fallback =False)
+RESPONSIBLE_USER_ENABLED = config.getboolean("features", "enable_responsible_user", fallback=False)
+BOT_CHANNEL_ENABLED = config.getboolean("features", "enable_bot_channel", fallback=False)
+
+# --- DISCORD ---
+BOT_NAME = config.get("discord", "bot_name", fallback="Server Starter")
+RESPONSIBLE_USER = config.get("discord", "responsible_user", fallback=None)
+
+# --- IDS ---
+BOT_CHANNEL_ID = config.getint("discord.ids", "bot_channel_id")
+ROLE_ID = config.getint("discord.ids", "bot_user_role_id")
 
 # --- NETWORK ---
-MC_MAC = config.get("network", "mc_server_mac")
+SERVER_MAC = config.get("network", "mc_server_mac")
 BROADCAST_IP = config.get("network", "broadcast_ip")
+
 
 bot = discord.Bot()
 
@@ -52,7 +51,6 @@ def _send_magic_packet(mac_address: str, broadcast: str = "192.168.1.255", port:
     print(f"Magic packet sent to {mac_address} via {broadcast}:{port}")
 
 
-
 # ----------------------------- Events -----------------------------
 @bot.event
 async def on_ready():
@@ -69,7 +67,7 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    if message.channel.id == CHANNEL_ID and not message.author.bot and not message.content.startswith("/"):
+    if BOT_CHANNEL_ENABLED and message.channel.id == BOT_CHANNEL_ID and not message.author.bot and not message.content.startswith("/"):
         await message.delete()
 
 
@@ -94,17 +92,17 @@ async def help(ctx: discord.ApplicationContext):
 @bot.slash_command(name="ping", description="Check the bot's latency.")
 async def ping(ctx: discord.ApplicationContext):
     latency = bot.latency * 1000
-    await ctx.respond(f"🏓 Pong! **Latency:** {latency:.2f} ms")
+    await ctx.respond(f"🏓 Pong! **Latency:** {latency:.2f} ms", ephemeral=True)
 
 
 @bot.slash_command(name="wake", description="Send a magic packet to wake up the server.")
 async def wake(ctx: discord.ApplicationContext):
     try:
-        if not MC_MAC:
+        if not SERVER_MAC:
             await ctx.respond("Internal server error: MAC address not configured. Please set the MAC_ADDRESS environment variable.", ephemeral=True)
             return
         
-        _send_magic_packet(MC_MAC, BROADCAST_IP)
+        _send_magic_packet(SERVER_MAC, BROADCAST_IP)
         
         embed = discord.Embed(
             title=f"Magic Packet Sent Successfully!",
@@ -117,11 +115,11 @@ async def wake(ctx: discord.ApplicationContext):
         embed.add_field(name="Awoken until: ", value=discord.utils.format_dt(midnight_cest, style="t"), inline=False)
         embed.set_author(name=BOT_NAME, icon_url=bot.user.display_avatar.url if bot.user else None)
         
-        if RESPONSIBLE_USER_ENABLED:
-            embed.set_footer(text=f"If the server fails to start, ping @{RESPONSIBLE_USER_NAME} for support.")
+        if RESPONSIBLE_USER_ENABLED and RESPONSIBLE_USER is not None:
+            embed.set_footer(text=f"If the server fails to start, ping @{RESPONSIBLE_USER} for support.")
 
         await ctx.respond(embed=embed, ephemeral=False)
-    except ValueError as e:
+    except Exception as e:
         await ctx.respond(f"Error: {e}", ephemeral=True)
 
 
