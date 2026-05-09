@@ -1,9 +1,6 @@
-import discord
-import asyncio
-import dotenv, socket, os
+import discord, asyncio, dotenv, configparser, socket, os
 from datetime import datetime, timezone, timedelta
 
-from discord.ext import commands
 
 # Ensure an event loop is available, it doesn't work otherwise :(
 try:
@@ -15,23 +12,30 @@ except RuntimeError:
 
 dotenv.load_dotenv()
 
+
+config = configparser.ConfigParser()
+config.read("config.ini")
+
+# --- DISCORD ---
+BOT_NAME = config.get("discord", "bot_name", fallback="Server Starter")
+
+# --- IDS ---
+CHANNEL_ID = config.getint("discord.ids", "bot_channel_id")
+ROLE_ID = config.getint("discord.ids", "bot_user_role_id")
+LOG_CHANNEL_ID = config.getint("discord.ids", "bot_logging_channel_id", fallback=0)
+RESPONSIBLE_USER_NAME = config.getint("discord.ids", "responsible_user_name", fallback=0)
+
+# --- FEATURES ---
+LOGGING_ENABLED = config.getboolean("features", "enable_logging", fallback=False)
+RESPONSIBLE_USER_ENABLED = config.getboolean("features", "responsible_user_id", fallback =False)
+
+# --- NETWORK ---
+MC_MAC = config.get("network", "mc_server_mac")
+BROADCAST_IP = config.get("network", "broadcast_ip")
+
 bot = discord.Bot()
 
-mac_address = os.getenv("MAC_ADDRESS")
-if not mac_address:
-    raise ValueError("MAC_ADDRESS not found in environment variables.")
-
-mc_role = os.getenv("MC_ROLE")
-if not mc_role:
-    raise ValueError("MC_ROLE not found in environment variables.")
-
-bot_channel_id = os.getenv("BOT_CHANNEL")
-if not bot_channel_id:
-    raise ValueError("BOT_CHANNEL not found in environment variables.")
-bot_channel_id = int(bot_channel_id)
-
-
-def send_magic_packet(mac_address: str, broadcast: str = "192.168.1.255", port: int = 9):
+def _send_magic_packet(mac_address: str, broadcast: str = "192.168.1.255", port: int = 9):
     # Clean and validate MAC address
     mac = mac_address.replace(":", "").replace("-", "").replace(".", "")
     if len(mac) != 12 or not all(c in "0123456789abcdefABCDEF" for c in mac):
@@ -65,7 +69,7 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    if message.channel.id == bot_channel_id and not message.author.bot and not message.content.startswith("/"):
+    if message.channel.id == CHANNEL_ID and not message.author.bot and not message.content.startswith("/"):
         await message.delete()
 
 
@@ -73,18 +77,17 @@ async def on_message(message: discord.Message):
 @bot.slash_command(name="help", description="Show all available commands.")
 async def help(ctx: discord.ApplicationContext):
     embed = discord.Embed(
-        title="Server Starter — Help",
+        title=f"{BOT_NAME} — Help",
         description="Here's a list of all available commands:",
         color=discord.Color.blurple()
     )
 
     embed.add_field(name="/help", value="Show this help message.", inline=False)
     embed.add_field(name="/ping", value="Check the bot's latency.", inline=False)
-    embed.add_field(name="/whois `<member>`", value="Display info about a server member (ID, creation date, join date, roles). This is primarily for administrative and or debug purposes.", inline=False)
     embed.add_field(name="/wake", value="Send a Wake-on-LAN magic packet to start the server.", inline=False)
     embed.add_field(name="More features are coming!", value="More features are planned and will be added periodically.", inline=False)
 
-    embed.set_author(name="Server Starter", icon_url=bot.user.display_avatar.url if bot.user else None)
+    embed.set_author(name=BOT_NAME, icon_url=bot.user.display_avatar.url if bot.user else None)
     await ctx.respond(embed=embed, ephemeral=True)
 
 
@@ -94,36 +97,14 @@ async def ping(ctx: discord.ApplicationContext):
     await ctx.respond(f"🏓 Pong! **Latency:** {latency:.2f} ms")
 
 
-@bot.slash_command(name="whois", description="Get information about a member.")
-async def whois(ctx: discord.ApplicationContext, member: discord.Member):
-    if member.joined_at is None:
-        await ctx.respond("Please specify a valid member.", ephemeral=True)
-        return
-
-    embed = discord.Embed(
-        title=f"User Info",
-        color=discord.Color.green()
-    )
-
-    embed.add_field(name="User ID: ", value=str(member.id), inline=False)
-    embed.add_field(name="Account Created: ", value=discord.utils.format_dt(member.created_at), inline=False)
-    embed.add_field(name="Joined Server: ", value=discord.utils.format_dt(member.joined_at), inline=False)
-
-    embed.add_field(name=f"Roles [{len(member.roles) - 1}]: ", value=", ".join([role.mention for role in member.roles if role.name != "@everyone"]), inline=False)
-    embed.set_author(name=member, icon_url=bot.user.display_avatar.url if bot.user else None)
-    embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-
-    await ctx.respond(embed=embed, ephemeral=True)
-
-
 @bot.slash_command(name="wake", description="Send a magic packet to wake up the server.")
 async def wake(ctx: discord.ApplicationContext):
     try:
-        if not mac_address:
+        if not MC_MAC:
             await ctx.respond("Internal server error: MAC address not configured. Please set the MAC_ADDRESS environment variable.", ephemeral=True)
             return
         
-        send_magic_packet(mac_address)
+        _send_magic_packet(MC_MAC, BROADCAST_IP)
         
         embed = discord.Embed(
             title=f"Magic Packet Sent Successfully!",
@@ -134,8 +115,10 @@ async def wake(ctx: discord.ApplicationContext):
         cest = timezone(timedelta(hours=2))
         midnight_cest = (datetime.now(cest) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         embed.add_field(name="Awoken until: ", value=discord.utils.format_dt(midnight_cest, style="t"), inline=False)
-        embed.set_author(name="Server Starter", icon_url=bot.user.display_avatar.url if bot.user else None)
-        embed.set_footer(text="If the server fails to start, ping <@794589342445338674> for support.")
+        embed.set_author(name=BOT_NAME, icon_url=bot.user.display_avatar.url if bot.user else None)
+        
+        if RESPONSIBLE_USER_ENABLED:
+            embed.set_footer(text=f"If the server fails to start, ping @{RESPONSIBLE_USER_NAME} for support.")
 
         await ctx.respond(embed=embed, ephemeral=False)
     except ValueError as e:
